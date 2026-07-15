@@ -547,17 +547,17 @@ async function saveRecord(){
       const out = await jsonp(CFG.SCRIPT_URL, params);
       if(!out || !out.ok) throw new Error((out&&out.error)||"errore");
 
-      // 2) carichiamo foto e audio uno per uno (via FormData)
+      // 2) carichiamo foto e audio uno per uno (base64 in POST text/plain)
       const totFile = photos.length + audios.length;
       if(totFile){
         let done = 0;
         const upd = ()=>{ done++; btn.innerHTML = '<span class="saving"></span>Carico file '+done+'/'+totFile+'…'; };
         for(const p of photos){
-          const blob = await dataUrlToBlobObj(p.dataUrl);
-          await uploadFile(rec.id, rec.nome, "foto", blob, p.name||"foto.jpg"); upd();
+          await uploadFileData(rec.id, rec.nome, "foto", p.dataUrl, p.name||"foto.jpg"); upd();
         }
         for(const a of audios){
-          await uploadFile(rec.id, rec.nome, "audio", a.blob, a.name||"audio.webm"); upd();
+          const dataUrl = await blobToDataUrl(a.blob);
+          await uploadFileData(rec.id, rec.nome, "audio", dataUrl, a.name||"audio.webm"); upd();
         }
       }
       toast("Scheda e file salvati","ok");
@@ -573,7 +573,6 @@ async function saveRecord(){
   resetForm();
   btn.textContent="Salva scheda"; btn.disabled=false;
   showTab('list');
-  loadList();
 }
 
 function resetForm(){
@@ -600,10 +599,15 @@ function initFilters(){
 }
 async function loadList(){
   if(LIVE){
-    try{
-      const out = await jsonp(CFG.SCRIPT_URL, {action:"list"});
-      records = (out && out.records) || [];
-    }catch(err){ toast("Non riesco a leggere l'elenco","err"); }
+    document.getElementById('listBody').innerHTML = '<div class="empty"><div class="big">Carico…</div></div>';
+    let ok = false;
+    for(let tent=0; tent<2 && !ok; tent++){
+      try{
+        const out = await jsonp(CFG.SCRIPT_URL, {action:"list", _:Date.now()});
+        if(out && out.ok){ records = out.records || []; ok = true; }
+      }catch(err){ /* ritenta una volta */ }
+    }
+    if(!ok){ toast("Non riesco a leggere l'elenco, riprova","err"); }
   }
   initFilters(); renderList();
 }
@@ -659,19 +663,17 @@ function showTab(which){
 function val(id){ return document.getElementById(id).value.trim(); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 
-/* invia un singolo file (foto/audio) allo script via FormData.
-   FormData evita il preflight CORS, quindi funziona anche da GitHub/mobile. */
-function uploadFile(recId, nome, tipo, blob, filename){
-  const fd = new FormData();
-  fd.append("recId", recId);
-  fd.append("nome", nome||"");
-  fd.append("tipo", tipo);
-  fd.append("file", blob, filename);
-  return fetch(CFG.SCRIPT_URL, { method:"POST", body: fd }).then(r=>{}).catch(()=>{});
-}
-/* converte una dataURL (foto compressa) in Blob per l'invio */
-function dataUrlToBlobObj(dataUrl){
-  return fetch(dataUrl).then(r=>r.blob());
+/* invia un singolo file (foto/audio) allo script come base64 dentro un POST
+   "text/plain": questa forma NON fa scattare il preflight CORS, quindi arriva
+   sempre allo script, anche da GitHub e da mobile. */
+function uploadFileData(recId, nome, tipo, dataUrl, filename){
+  const payload = { action:"file", recId, nome:nome||"", tipo, filename:filename||"file", data:dataUrl };
+  return fetch(CFG.SCRIPT_URL, {
+    method:"POST",
+    mode:"no-cors",
+    headers:{ "Content-Type":"text/plain;charset=utf-8" },
+    body: JSON.stringify(payload)
+  }).then(()=>{}).catch(()=>{});
 }
 function jsonp(baseUrl, params){
   return new Promise((resolve, reject)=>{
