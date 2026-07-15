@@ -537,8 +537,7 @@ async function saveRecord(){
   if(LIVE){
     btn.innerHTML = '<span class="saving"></span>Salvo…';
     try{
-      // Fase 1: salviamo i dati testuali via JSONP (aggira il CORS).
-      // Le foto/audio vengono contate ma non ancora caricate.
+      // 1) salviamo i dati testuali via JSONP (veloce, affidabile)
       const params = {
         action:"save",
         id:rec.id, nome:rec.nome, tel:rec.tel, categoria:rec.categoria,
@@ -547,7 +546,21 @@ async function saveRecord(){
       };
       const out = await jsonp(CFG.SCRIPT_URL, params);
       if(!out || !out.ok) throw new Error((out&&out.error)||"errore");
-      toast("Scheda salvata su Google","ok");
+
+      // 2) carichiamo foto e audio uno per uno (via FormData)
+      const totFile = photos.length + audios.length;
+      if(totFile){
+        let done = 0;
+        const upd = ()=>{ done++; btn.innerHTML = '<span class="saving"></span>Carico file '+done+'/'+totFile+'…'; };
+        for(const p of photos){
+          const blob = await dataUrlToBlobObj(p.dataUrl);
+          await uploadFile(rec.id, rec.nome, "foto", blob, p.name||"foto.jpg"); upd();
+        }
+        for(const a of audios){
+          await uploadFile(rec.id, rec.nome, "audio", a.blob, a.name||"audio.webm"); upd();
+        }
+      }
+      toast("Scheda e file salvati","ok");
     }catch(err){
       toast("Salvataggio non riuscito. Riprova.","err");
       btn.disabled=false; btn.textContent="Salva scheda"; return;
@@ -646,8 +659,20 @@ function showTab(which){
 function val(id){ return document.getElementById(id).value.trim(); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 
-/* JSONP: chiama Apps Script senza incappare nel blocco CORS.
-   Aggiunge uno <script> con ?callback=... e aspetta la risposta. */
+/* invia un singolo file (foto/audio) allo script via FormData.
+   FormData evita il preflight CORS, quindi funziona anche da GitHub/mobile. */
+function uploadFile(recId, nome, tipo, blob, filename){
+  const fd = new FormData();
+  fd.append("recId", recId);
+  fd.append("nome", nome||"");
+  fd.append("tipo", tipo);
+  fd.append("file", blob, filename);
+  return fetch(CFG.SCRIPT_URL, { method:"POST", body: fd }).then(r=>{}).catch(()=>{});
+}
+/* converte una dataURL (foto compressa) in Blob per l'invio */
+function dataUrlToBlobObj(dataUrl){
+  return fetch(dataUrl).then(r=>r.blob());
+}
 function jsonp(baseUrl, params){
   return new Promise((resolve, reject)=>{
     const cbName = "vcb_" + Date.now() + "_" + Math.floor(Math.random()*100000);
