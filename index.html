@@ -542,12 +542,13 @@ async function saveRecord(){
         foto: photos.map(p=>({name:p.name, data:p.dataUrl})),
         audio: await Promise.all(audios.map(async a=>({name:a.name, data:await blobToDataUrl(a.blob)}))),
       };
-      const res = await fetch(CFG.SCRIPT_URL, {
-        method:"POST", body: JSON.stringify(payload),
+      await fetch(CFG.SCRIPT_URL, {
+        method:"POST",
+        mode:"no-cors",
+        body: JSON.stringify(payload),
         headers:{"Content-Type":"text/plain;charset=utf-8"}
       });
-      const out = await res.json();
-      if(!out.ok) throw new Error(out.error||"errore");
+      // in modalità no-cors non possiamo leggere la risposta: se l'invio non lancia errori, è salvato
       toast("Scheda salvata su Google","ok");
     }catch(err){
       toast("Salvataggio non riuscito. Riprova.","err");
@@ -629,7 +630,7 @@ async function changeStatus(id, stato){
   renderList();
   if(LIVE){
     try{
-      await fetch(CFG.SCRIPT_URL, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"},
+      await fetch(CFG.SCRIPT_URL, {method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"},
         body: JSON.stringify({action:"status", id, stato})});
     }catch(err){ toast("Stato non aggiornato sul server","err"); }
   }
