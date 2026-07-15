@@ -403,7 +403,7 @@ function validateStep(){
    ===================================================================== */
 function addPhotos(files){
   [...files].forEach(file=>{
-    compressImage(file, 1400, 0.72).then(dataUrl=>{
+    compressImage(file, 2000, 0.85).then(dataUrl=>{
       photos.push({id:uid(), dataUrl, name:file.name||"foto.jpg"});
       renderThumbs();
     });
